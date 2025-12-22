@@ -5,6 +5,9 @@ on:
         tags:
             - "v*"
 
+permissions:
+    contents: write
+
 jobs:
     build-macos:
         runs-on: macos-latest
@@ -23,18 +26,30 @@ jobs:
               run: flutter pub get
               working-directory: violetpatch
 
-            - name: Build macOS app
+            - name: Build macOS app (ARM64 - Apple Silicon)
               run: flutter build macos --release
               working-directory: violetpatch
 
-            - name: Create ZIP archive
+            - name: Create ARM64 ZIP archive
               run: |
                   cd violetpatch/build/macos/Build/Products/Release
-                  zip -r VioletPatch-macos.zip violetpatch.app
+                  zip -r VioletPatch-macos-arm64.zip violetpatch.app
+                  rm -rf violetpatch.app
 
-            - name: Upload Release Asset
+            - name: Build macOS app (x86_64 - Intel)
+              run: arch -x86_64 flutter build macos --release
+              working-directory: violetpatch
+
+            - name: Create x86_64 ZIP archive
+              run: |
+                  cd violetpatch/build/macos/Build/Products/Release
+                  zip -r VioletPatch-macos-x86_64.zip violetpatch.app
+
+            - name: Upload Release Assets
               uses: softprops/action-gh-release@v1
               with:
-                  files: violetpatch/build/macos/Build/Products/Release/VioletPatch-macos.zip
+                  files: |
+                      violetpatch/build/macos/Build/Products/Release/VioletPatch-macos-arm64.zip
+                      violetpatch/build/macos/Build/Products/Release/VioletPatch-macos-x86_64.zip
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
