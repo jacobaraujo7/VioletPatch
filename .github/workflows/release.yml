@@ -12,6 +12,13 @@ jobs:
   build-macos:
     runs-on: macos-latest
 
+    env:
+      APP_NAME: VioletPatch
+      PROJECT_DIR: violetpatch
+      BUILD_DIR: violetpatch/build/macos/Build/Products/Release
+      ARM_DMG: VioletPatch-macos-arm64.dmg
+      X64_DMG: VioletPatch-macos-x86_64.dmg
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,48 +32,182 @@ jobs:
       - name: Install create-dmg
         run: brew install create-dmg
 
+      # ---------------------------
+      # Signing + Notarization Setup
+      # ---------------------------
+      - name: Import Developer ID certificate into keychain
+        env:
+          MACOS_CERT_P12_B64: ${{ secrets.MACOS_CERT_P12_B64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          echo "$MACOS_CERT_P12_B64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # allow codesign to access the private key without UI prompts
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security find-identity -v -p codesigning
+
       - name: Install dependencies
         run: flutter pub get
-        working-directory: violetpatch
+        working-directory: ${{ env.PROJECT_DIR }}
 
+      # ---------------------------
+      # Build + Sign + DMG + Notarize (ARM64)
+      # ---------------------------
       - name: Build macOS app (ARM64 - Apple Silicon)
         run: flutter build macos --release
-        working-directory: violetpatch
+        working-directory: ${{ env.PROJECT_DIR }}
+
+      - name: Codesign .app (ARM64)
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP_PATH="${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.app"
+
+          # If your product name differs (e.g. "violetpatch.app"), adjust above.
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App not found at $APP_PATH"
+            echo "Contents of build dir:"
+            ls -la "${{ env.BUILD_DIR }}"
+            exit 1
+          fi
+
+          # Sign everything inside (Flutter bundles frameworks)
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$APP_PATH"
+
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+          spctl -a -t exec -vv "$APP_PATH" || true
 
       - name: Create ARM64 DMG
         run: |
+          set -euo pipefail
+          APP_PATH="${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.app"
+
           create-dmg \
-            --volname "VioletPatch" \
+            --volname "${{ env.APP_NAME }}" \
             --window-size 600 400 \
             --icon-size 100 \
             --app-drop-link 450 200 \
-            --icon "violetpatch.app" 150 200 \
-            "VioletPatch-macos-arm64.dmg" \
-            "violetpatch/build/macos/Build/Products/Release/violetpatch.app" || true
+            --icon "${{ env.APP_NAME }}.app" 150 200 \
+            "${{ env.ARM_DMG }}" \
+            "$APP_PATH" || true
 
+      - name: Codesign DMG (ARM64)
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" "${{ env.ARM_DMG }}"
+          codesign --verify --verbose=4 "${{ env.ARM_DMG }}"
+
+      - name: Notarize + Staple (ARM64 DMG)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "${{ env.ARM_DMG }}" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+          xcrun stapler staple "${{ env.ARM_DMG }}"
+
+      # ---------------------------
+      # Build + Sign + DMG + Notarize (x86_64)
+      # ---------------------------
       - name: Clean build for x86_64
-        run: rm -rf violetpatch/build/macos
+        run: rm -rf ${{ env.PROJECT_DIR }}/build/macos
 
       - name: Build macOS app (x86_64 - Intel)
         run: arch -x86_64 flutter build macos --release
-        working-directory: violetpatch
+        working-directory: ${{ env.PROJECT_DIR }}
+
+      - name: Codesign .app (x86_64)
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP_PATH="${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App not found at $APP_PATH"
+            ls -la "${{ env.BUILD_DIR }}"
+            exit 1
+          fi
+
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$APP_PATH"
+
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+          spctl -a -t exec -vv "$APP_PATH" || true
 
       - name: Create x86_64 DMG
         run: |
+          set -euo pipefail
+          APP_PATH="${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.app"
+
           create-dmg \
-            --volname "VioletPatch" \
+            --volname "${{ env.APP_NAME }}" \
             --window-size 600 400 \
             --icon-size 100 \
             --app-drop-link 450 200 \
-            --icon "violetpatch.app" 150 200 \
-            "VioletPatch-macos-x86_64.dmg" \
-            "violetpatch/build/macos/Build/Products/Release/violetpatch.app" || true
+            --icon "${{ env.APP_NAME }}.app" 150 200 \
+            "${{ env.X64_DMG }}" \
+            "$APP_PATH" || true
 
+      - name: Codesign DMG (x86_64)
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" "${{ env.X64_DMG }}"
+          codesign --verify --verbose=4 "${{ env.X64_DMG }}"
+
+      - name: Notarize + Staple (x86_64 DMG)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "${{ env.X64_DMG }}" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+          xcrun stapler staple "${{ env.X64_DMG }}"
+
+      # ---------------------------
+      # Release Upload
+      # ---------------------------
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            VioletPatch-macos-arm64.dmg
-            VioletPatch-macos-x86_64.dmg
+            ${{ env.ARM_DMG }}
+            ${{ env.X64_DMG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
