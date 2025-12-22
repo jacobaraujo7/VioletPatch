@@ -1,55 +1,72 @@
 name: Build and Release
 
 on:
-    push:
-        tags:
-            - "v*"
+  push:
+    tags:
+      - "v*"
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    build-macos:
-        runs-on: macos-latest
+  build-macos:
+    runs-on: macos-latest
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Setup Flutter
-              uses: subosito/flutter-action@v2
-              with:
-                  flutter-version: "3.38.5"
-                  channel: "stable"
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.5"
+          channel: "stable"
 
-            - name: Install dependencies
-              run: flutter pub get
-              working-directory: violetpatch
+      - name: Install create-dmg
+        run: brew install create-dmg
 
-            - name: Build macOS app (ARM64 - Apple Silicon)
-              run: flutter build macos --release
-              working-directory: violetpatch
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: violetpatch
 
-            - name: Create ARM64 ZIP archive
-              run: |
-                  cd violetpatch/build/macos/Build/Products/Release
-                  zip -r VioletPatch-macos-arm64.zip violetpatch.app
-                  rm -rf violetpatch.app
+      - name: Build macOS app (ARM64 - Apple Silicon)
+        run: flutter build macos --release
+        working-directory: violetpatch
 
-            - name: Build macOS app (x86_64 - Intel)
-              run: arch -x86_64 flutter build macos --release
-              working-directory: violetpatch
+      - name: Create ARM64 DMG
+        run: |
+          create-dmg \
+            --volname "VioletPatch" \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 450 200 \
+            --icon "violetpatch.app" 150 200 \
+            "VioletPatch-macos-arm64.dmg" \
+            "violetpatch/build/macos/Build/Products/Release/violetpatch.app" || true
 
-            - name: Create x86_64 ZIP archive
-              run: |
-                  cd violetpatch/build/macos/Build/Products/Release
-                  zip -r VioletPatch-macos-x86_64.zip violetpatch.app
+      - name: Clean build for x86_64
+        run: rm -rf violetpatch/build/macos
 
-            - name: Upload Release Assets
-              uses: softprops/action-gh-release@v1
-              with:
-                  files: |
-                      violetpatch/build/macos/Build/Products/Release/VioletPatch-macos-arm64.zip
-                      violetpatch/build/macos/Build/Products/Release/VioletPatch-macos-x86_64.zip
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build macOS app (x86_64 - Intel)
+        run: arch -x86_64 flutter build macos --release
+        working-directory: violetpatch
+
+      - name: Create x86_64 DMG
+        run: |
+          create-dmg \
+            --volname "VioletPatch" \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 450 200 \
+            --icon "violetpatch.app" 150 200 \
+            "VioletPatch-macos-x86_64.dmg" \
+            "violetpatch/build/macos/Build/Products/Release/violetpatch.app" || true
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            VioletPatch-macos-arm64.dmg
+            VioletPatch-macos-x86_64.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
