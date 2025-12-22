@@ -1,0 +1,40 @@
+name: Build and Release
+
+on:
+    push:
+        tags:
+            - "v*"
+
+jobs:
+    build-macos:
+        runs-on: macos-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                  flutter-version: "3.38.5"
+                  channel: "stable"
+
+            - name: Install dependencies
+              run: flutter pub get
+              working-directory: violetpatch
+
+            - name: Build macOS app
+              run: flutter build macos --release
+              working-directory: violetpatch
+
+            - name: Create ZIP archive
+              run: |
+                  cd violetpatch/build/macos/Build/Products/Release
+                  zip -r VioletPatch-macos.zip violetpatch.app
+
+            - name: Upload Release Asset
+              uses: softprops/action-gh-release@v1
+              with:
+                  files: violetpatch/build/macos/Build/Products/Release/VioletPatch-macos.zip
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
