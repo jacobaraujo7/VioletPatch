@@ -1,5 +1,9 @@
 # VioletPatch
 
+<p align="center">
+  <img src="violetpatch/assets/logo.png" alt="VioletPatch" width="128">
+</p>
+
 **Simple. Lightweight. Audio routing for macOS.**
 
 ![macOS](https://img.shields.io/badge/platform-macOS-blueviolet)
