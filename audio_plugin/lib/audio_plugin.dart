@@ -194,6 +194,10 @@ class DeviceDisconnectedEvent extends DeviceEvent {
 }
 
 class AudioPlugin {
+  Future<bool> requestMicrophonePermission() {
+    return AudioPluginPlatform.instance.requestMicrophonePermission();
+  }
+
   Future<List<AudioDevice>> listDevices() async {
     final devices = await AudioPluginPlatform.instance.listDevices();
     return devices.map(AudioDevice.fromMap).toList();

@@ -16,6 +16,14 @@ class MethodChannelAudioPlugin extends AudioPluginPlatform {
   Stream<Map<String, Object?>>? _deviceEventsStream;
 
   @override
+  Future<bool> requestMicrophonePermission() async {
+    final result = await methodChannel.invokeMethod<bool>(
+      'requestMicrophonePermission',
+    );
+    return result ?? false;
+  }
+
+  @override
   Future<List<Map<String, Object?>>> listDevices() async {
     final devices = await methodChannel.invokeMethod<List<Object?>>(
       'listDevices',

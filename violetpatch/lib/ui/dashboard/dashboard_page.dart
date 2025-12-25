@@ -17,6 +17,8 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   DashboardViewModel get _vm => widget.viewModel;
 
+  String? _lastErrorMessage;
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +33,34 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _onViewModelChanged() {
     if (mounted) setState(() {});
+
+    final error = _vm.state.statusMessage;
+    if (error != null &&
+        error.startsWith('Failed to initialize') &&
+        error != _lastErrorMessage) {
+      _lastErrorMessage = error;
+      Future.microtask(() => _showErrorDialog(error));
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Initialization Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _vm.clearStatus();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showCreateRouteDialog() {

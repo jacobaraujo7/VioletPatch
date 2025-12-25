@@ -23,6 +23,12 @@ abstract class AudioPluginPlatform extends PlatformInterface {
     _instance = instance;
   }
 
+  Future<bool> requestMicrophonePermission() {
+    throw UnimplementedError(
+      'requestMicrophonePermission() has not been implemented.',
+    );
+  }
+
   Future<List<Map<String, Object?>>> listDevices() {
     throw UnimplementedError('listDevices() has not been implemented.');
   }

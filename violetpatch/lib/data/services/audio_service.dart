@@ -43,9 +43,16 @@ class AudioService extends ChangeNotifier {
   DeviceEvent? get lastDeviceEvent => _lastDeviceEvent;
 
   Future<void> _init() async {
-    await _loadSessionConfig();
-    await loadDevices();
-    _startListeningToDeviceEvents();
+    try {
+      // Request microphone permission first - required for audio input
+      await _plugin.requestMicrophonePermission();
+      await _loadSessionConfig();
+      await loadDevices();
+      _startListeningToDeviceEvents();
+    } catch (e) {
+      _error = 'Failed to initialize audio plugin: $e';
+      notifyListeners();
+    }
   }
 
   void _startListeningToDeviceEvents() {

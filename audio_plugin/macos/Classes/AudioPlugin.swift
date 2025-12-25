@@ -2,6 +2,7 @@ import Cocoa
 import CoreAudio
 import AudioToolbox
 import FlutterMacOS
+import AVFoundation
 import os
 
 // MARK: - DeviceListener Protocol and Class
@@ -140,10 +141,13 @@ private final class DeviceListener {
       mScope: kAudioObjectPropertyScopeGlobal,
       mElement: kAudioObjectPropertyElementMaster
     )
-    var dataSize = UInt32(MemoryLayout<CFString>.size)
-    var uid: CFString = "" as CFString
-    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &uid)
-    return status == noErr ? uid as String : nil
+    var value: Unmanaged<CFString>?
+    var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &value)
+    if status == noErr, let value = value {
+      return value.takeRetainedValue() as String
+    }
+    return nil
   }
   
   private func getDeviceName(_ deviceID: AudioDeviceID) -> String? {
@@ -152,10 +156,13 @@ private final class DeviceListener {
       mScope: kAudioObjectPropertyScopeGlobal,
       mElement: kAudioObjectPropertyElementMaster
     )
-    var dataSize = UInt32(MemoryLayout<CFString>.size)
-    var name: CFString = "" as CFString
-    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &name)
-    return status == noErr ? name as String : nil
+    var value: Unmanaged<CFString>?
+    var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &value)
+    if status == noErr, let value = value {
+      return value.takeRetainedValue() as String
+    }
+    return nil
   }
   
   deinit {
@@ -211,6 +218,8 @@ public class AudioPlugin: NSObject, FlutterPlugin, DeviceListenerDelegate {
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "requestMicrophonePermission":
+      requestMicrophonePermission(result: result)
     case "listDevices":
       result(listDevices())
     case "getDefaultDevices":
@@ -350,6 +359,23 @@ public class AudioPlugin: NSObject, FlutterPlugin, DeviceListenerDelegate {
       "defaultInputUID": defaults.inputUID,
       "defaultOutputUID": defaults.outputUID
     ]
+  }
+
+  private func requestMicrophonePermission(result: @escaping FlutterResult) {
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+      result(true)
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .audio) { granted in
+        DispatchQueue.main.async {
+          result(granted)
+        }
+      }
+    case .denied, .restricted:
+      result(false)
+    @unknown default:
+      result(false)
+    }
   }
 }
 
@@ -502,10 +528,13 @@ private enum AudioDeviceCatalog {
       mScope: kAudioObjectPropertyScopeGlobal,
       mElement: kAudioObjectPropertyElementMaster
     )
-    var dataSize = UInt32(MemoryLayout<CFString>.size)
-    var name: CFString = "" as CFString
-    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &name)
-    return status == noErr ? name as String : nil
+    var value: Unmanaged<CFString>?
+    var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &value)
+    if status == noErr, let value = value {
+      return value.takeRetainedValue() as String
+    }
+    return nil
   }
 
   private static func deviceUID(_ deviceID: AudioDeviceID) -> String? {
@@ -514,10 +543,13 @@ private enum AudioDeviceCatalog {
       mScope: kAudioObjectPropertyScopeGlobal,
       mElement: kAudioObjectPropertyElementMaster
     )
-    var dataSize = UInt32(MemoryLayout<CFString>.size)
-    var uid: CFString = "" as CFString
-    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &uid)
-    return status == noErr ? uid as String : nil
+    var value: Unmanaged<CFString>?
+    var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &value)
+    if status == noErr, let value = value {
+      return value.takeRetainedValue() as String
+    }
+    return nil
   }
 
   private static func channelCount(_ deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
@@ -1573,7 +1605,10 @@ private class AudioRouterEngine {
   }
 
   private func rebuildRouteIndexes() {
-    routesByOutput = Dictionary(grouping: routes.values, by: { $0.outDeviceUID })
+    routesByOutput.removeAll()
+    for route in routes.values {
+      routesByOutput[route.outDeviceUID, default: []].append(route)
+    }
   }
 
   private func recordStats(underrun: Bool, overrun: Bool) {
