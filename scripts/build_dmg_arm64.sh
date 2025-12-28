@@ -12,7 +12,7 @@ BUNDLE_ID="br.com.flutterando.violetpatch"
 FLUTTER_APP_DIR="violetpatch"
 VERSION=$(grep 'version:' "$FLUTTER_APP_DIR/pubspec.yaml" | sed 's/version: //' | cut -d'+' -f1)
 BUILD_DIR="$FLUTTER_APP_DIR/build/macos"
-OUTPUT_DIR="dist"
+OUTPUT_DIR="dist/arm64"
 SIGNING_IDENTITY="Developer ID Application"  # Auto-detected if available
 
 # Colors
